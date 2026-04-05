@@ -11,7 +11,6 @@ import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.config.ModConfig;
-import net.minecraftforge.client.ConfigScreenHandler;
 import net.minecraftforge.fml.loading.FMLLoader;
 
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
@@ -103,9 +102,7 @@ public class SentientMCMod {
                 ModLoadingContext.get().registerConfig(ModConfig.Type.CLIENT, SentientMCConfig.SPEC);
 
                 if (FMLLoader.getDist().isClient()) {
-                        ModLoadingContext.get().registerExtensionPoint(ConfigScreenHandler.ConfigScreenFactory.class,
-                                        () -> new ConfigScreenHandler.ConfigScreenFactory(
-                                                        (mc, screen) -> new SentientMCConfigScreen(screen)));
+                        SentientMCConfigScreen.registerConfigScreen();
                 }
 
                 MinecraftForge.EVENT_BUS.addListener(this::onServerStart);

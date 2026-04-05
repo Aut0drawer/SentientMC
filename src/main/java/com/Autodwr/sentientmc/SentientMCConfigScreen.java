@@ -47,6 +47,16 @@ public class SentientMCConfigScreen extends Screen {
         this.tempBatching = SentientMCConfig.ENABLE_BATCHING.get();
     }
 
+    @SuppressWarnings("removal")
+    public static void registerConfigScreen() {
+        net.minecraftforge.fml.ModLoadingContext.get().registerExtensionPoint(
+            net.minecraftforge.client.ConfigScreenHandler.ConfigScreenFactory.class,
+            () -> new net.minecraftforge.client.ConfigScreenHandler.ConfigScreenFactory(
+                (mc, screen) -> new SentientMCConfigScreen(screen)
+            )
+        );
+    }
+
     @Override
     protected void init() {
         this.clearWidgets();
