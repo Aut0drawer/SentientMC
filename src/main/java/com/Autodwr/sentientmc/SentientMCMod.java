@@ -42,7 +42,7 @@ import java.util.regex.Pattern;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.CommandSource;
 import net.minecraft.server.level.ServerBossEvent;
-import net.minecraft.world.BossEvent;
+
 import net.minecraftforge.event.level.BlockEvent;
 
 @SuppressWarnings("null")
@@ -55,12 +55,29 @@ public class SentientMCMod {
         private static final Map<String, Long> lastInteractionTimes = new HashMap<>();
 
         // Persistent Structured Quest Tracking
-        private static String questType = ""; // e.g. "ITEM_GATHER", "KILL"
-        private static String questTarget = ""; // e.g. "minecraft:apple", "minecraft:zombie"
-        private static int questTargetCount = 0; // e.g. 5
-        private static int questCurrentCount = 0; // Progress
-        private static String questDesc = ""; // e.g. "收集5个苹果"
-        private static ServerBossEvent questBossBar = null;
+        public static class PlayerQuest {
+                public String type;
+                public String target;
+                public int targetCount;
+                public int currentCount;
+                public String desc;
+                public net.minecraft.server.level.ServerBossEvent bossBar;
+
+                public PlayerQuest(String type, String target, int targetCount, String desc) {
+                        this.type = type;
+                        this.target = target;
+                        this.targetCount = targetCount;
+                        this.currentCount = 0;
+                        this.desc = desc;
+                        this.bossBar = new net.minecraft.server.level.ServerBossEvent(
+                                        net.minecraft.network.chat.Component.literal(""),
+                                        net.minecraft.world.BossEvent.BossBarColor.YELLOW,
+                                        net.minecraft.world.BossEvent.BossBarOverlay.PROGRESS);
+                        this.bossBar.setProgress(0.0f);
+                }
+        }
+        
+        public static final java.util.concurrent.ConcurrentHashMap<String, PlayerQuest> activeQuests = new java.util.concurrent.ConcurrentHashMap<>();
 
         // Permissions
         private static final Gson GSON = new Gson();
@@ -98,8 +115,8 @@ public class SentientMCMod {
                 MinecraftForge.EVENT_BUS.register(this);
                 LOGGER.info("[SentientMCMod] Successfully registered on MinecraftForge.EVENT_BUS!");
 
-                // CLIENT 类型在单人和联机时均可正常读取，服务端可通过 /aiconfig 指令在运行时覆盖
-                ModLoadingContext.get().registerConfig(ModConfig.Type.CLIENT, SentientMCConfig.SPEC);
+                // COMMON 类型在单人和服务端均可正常读取和保存
+                ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, SentientMCConfig.SPEC);
 
                 if (FMLLoader.getDist().isClient()) {
                         SentientMCConfigScreen.registerConfigScreen();
@@ -156,60 +173,49 @@ public class SentientMCMod {
         }
 
         private static void checkQuestProgress() {
-                if (questBossBar == null || !questBossBar.isVisible() || questTargetCount <= 0)
-                        return;
                 MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
                 if (server == null)
                         return;
 
-                if ("ITEM_GATHER".equals(questType)) {
-                        int totalFound = 0;
-                        for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-                                net.minecraft.world.item.Item item = net.minecraftforge.registries.ForgeRegistries.ITEMS
-                                                .getValue(parseResourceLocation(questTarget));
-                                if (item != null) {
-                                        totalFound += p.getInventory().countItem(item);
+                for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+                        String pName = p.getName().getString();
+                        PlayerQuest pq = activeQuests.get(pName);
+                        if (pq != null && pq.bossBar.isVisible() && pq.targetCount > 0) {
+                                if ("ITEM_GATHER".equals(pq.type)) {
+                                        net.minecraft.world.item.Item item = net.minecraftforge.registries.ForgeRegistries.ITEMS
+                                                        .getValue(parseResourceLocation(pq.target));
+                                        if (item != null) {
+                                                pq.currentCount = p.getInventory().countItem(item);
+                                                updateBossBar(p, pq);
+                                        }
                                 }
-                        }
-                        questCurrentCount = totalFound;
-                        updateBossBar();
-                }
-                // BUILD and KILL are event-driven, no polling needed
-        }
-
-        private static void updateBossBar() {
-                if (questBossBar != null && questTargetCount > 0) {
-                        float progress = Math.min(1.0f, (float) questCurrentCount / questTargetCount);
-                        questBossBar.setProgress(progress);
-                        questBossBar.setName(Component.literal("§e[任务] §f" + questDesc + " (" + questCurrentCount + "/"
-                                        + questTargetCount + ")"));
-
-                        if (questCurrentCount >= questTargetCount) {
-                                completeQuest();
+                                // BUILD and KILL are event-driven, no polling needed
                         }
                 }
         }
 
-        private static void completeQuest() {
-                MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
-                if (server != null) {
-                        questBossBar.setVisible(false);
-                        for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-                                questBossBar.removePlayer(p);
+        private static void updateBossBar(ServerPlayer player, PlayerQuest pq) {
+                if (pq.targetCount > 0) {
+                        float progress = Math.min(1.0f, (float) pq.currentCount / pq.targetCount);
+                        pq.bossBar.setProgress(progress);
+                        pq.bossBar.setName(net.minecraft.network.chat.Component.literal("§e[任务] §f" + pq.desc + " (" + pq.currentCount + "/" + pq.targetCount + ")"));
+
+                        if (pq.currentCount >= pq.targetCount) {
+                                completeQuest(player, pq);
                         }
-                        server.getPlayerList().broadcastSystemMessage(Component.literal("§a[任务完成！] §f" + questDesc),
-                                        false);
                 }
+        }
 
-                SentientMCClient.addMessageToBatch("SYSTEM",
-                                "[SYSTEM FEEDBACK] 玩家已完成任务: " + questDesc + "。你可以进行下一步或给予奖励。", null);
+        private static void completeQuest(ServerPlayer player, PlayerQuest pq) {
+                pq.bossBar.setVisible(false);
+                pq.bossBar.removePlayer(player);
+                player.sendSystemMessage(net.minecraft.network.chat.Component.literal("§a[任务完成！] §f" + pq.desc));
 
-                // Reset
-                questType = "";
-                questTarget = "";
-                questTargetCount = 0;
-                questCurrentCount = 0;
-                questDesc = "";
+                String pName = player.getName().getString();
+                SentientMCClient.addMessageToBatch(pName,
+                                "[SYSTEM FEEDBACK] 玩家 " + pName + " 已完成任务: " + pq.desc + "。你可以进行下一步互动或给予奖励。", null);
+
+                activeQuests.remove(pName);
         }
 
         public static void loadPermissions() {
@@ -218,20 +224,20 @@ public class SentientMCMod {
                         if (chatFile.exists()) {
                                 Type listType = new TypeToken<List<String>>() {
                                 }.getType();
-                                chatWhitelist = GSON.fromJson(new FileReader(chatFile), listType);
-                        } else {
-                                // Default, allow everyone? Or let's just make it empty default
-                                // For ease of use out-of-the-box, we'll keep it empty meaning "no whitelist
-                                // enforced yet"
-                                // unless you want to lock it down strictly. Let's say if the list is empty,
-                                // everyone can use it.
+                                List<String> parsed = GSON.fromJson(new FileReader(chatFile), listType);
+                                if (parsed != null) {
+                                        chatWhitelist = new ArrayList<>(parsed);
+                                }
                         }
 
                         File cmdFile = new File("config/ai_command_whitelist.json");
                         if (cmdFile.exists()) {
                                 Type listType = new TypeToken<List<String>>() {
                                 }.getType();
-                                commandWhitelist = GSON.fromJson(new FileReader(cmdFile), listType);
+                                List<String> parsed = GSON.fromJson(new FileReader(cmdFile), listType);
+                                if (parsed != null) {
+                                        commandWhitelist = new ArrayList<>(parsed);
+                                }
                         }
                 } catch (Exception e) {
                         LOGGER.error("[SentientMCMod] Failed to load whitelist permissions", e);
@@ -264,16 +270,23 @@ public class SentientMCMod {
 
                 for (ServerPlayer player : server.getPlayerList().getPlayers()) {
                         String pName = player.getName().getString();
+
+                        // Permission Check: if whitelist has entries, player must be in it
+                        if (!chatWhitelist.isEmpty() && !chatWhitelist.contains(pName)) {
+                                continue;
+                        }
+
                         long lastTime = lastInteractionTimes.getOrDefault(pName, now);
 
                         // If we haven't tracked this player yet, or it's been longer than the interval
                         if (now - lastTime >= intervalMs || !lastInteractionTimes.containsKey(pName)) {
                                 LOGGER.info("[SentientMCMod] Triggering proactive chat for {}", pName);
                                 lastInteractionTimes.put(pName, now); // Reset timer
+                                lastTriggerPlayer = pName;
 
                                 String envState = getEnvironmentState(player);
                                 SentientMCClient.addMessageToBatch(pName,
-                                                "[SYSTEM] The player has been quiet for a while. If you see something interesting in their environment or inventory, proactively start a conversation. Do not mention that this is a system prompt.",
+                                                "[SYSTEM] 玩家 " + pName + " 已经有一段时间没说话了。请根据环境状态主动向他发起一段简短有趣的对话，或评论他正在做的事情。不要在回复中提到这是系统提示。",
                                                 envState);
                         }
                 }
@@ -286,45 +299,50 @@ public class SentientMCMod {
 
         @SubscribeEvent
         public void onBlockPlace(BlockEvent.EntityPlaceEvent event) {
-                if (!"BUILD".equals(questType))
-                        return;
-                if (questBossBar == null || !questBossBar.isVisible())
-                        return;
                 if (!(event.getEntity() instanceof ServerPlayer))
+                        return;
+
+                ServerPlayer player = (ServerPlayer) event.getEntity();
+                String pName = player.getName().getString();
+                PlayerQuest pq = activeQuests.get(pName);
+
+                if (pq == null || !"BUILD".equals(pq.type) || !pq.bossBar.isVisible())
                         return;
 
                 // Check if this block matches the quest target (e.g. "minecraft:stone_bricks")
                 net.minecraft.resources.ResourceLocation key = net.minecraftforge.registries.ForgeRegistries.BLOCKS
                                 .getKey(event.getPlacedBlock().getBlock());
                 String placedBlockId = key != null ? key.toString() : "";
-                if (placedBlockId.equals(questTarget)) {
-                        questCurrentCount++;
-                        updateBossBar();
-                        LOGGER.debug("[SentientMCMod] BUILD quest progress: {}/{} ({})", questCurrentCount,
-                                        questTargetCount, questTarget);
+                if (placedBlockId.equals(pq.target)) {
+                        pq.currentCount++;
+                        updateBossBar(player, pq);
+                        LOGGER.debug("[SentientMCMod] BUILD quest progress: {}/{} ({})", pq.currentCount,
+                                        pq.targetCount, pq.target);
                 }
         }
 
         @SubscribeEvent
         public void onLivingDeath(LivingDeathEvent event) {
-                if (!"KILL".equals(questType))
-                        return;
-                if (questBossBar == null || !questBossBar.isVisible())
-                        return;
-
                 // Check if the killer is a player
                 if (!(event.getSource().getEntity() instanceof ServerPlayer))
+                        return;
+
+                ServerPlayer player = (ServerPlayer) event.getSource().getEntity();
+                String pName = player.getName().getString();
+                PlayerQuest pq = activeQuests.get(pName);
+
+                if (pq == null || !"KILL".equals(pq.type) || !pq.bossBar.isVisible())
                         return;
 
                 // Get entity type ID e.g. "minecraft:zombie"
                 net.minecraft.resources.ResourceLocation key = net.minecraftforge.registries.ForgeRegistries.ENTITY_TYPES
                                 .getKey(event.getEntity().getType());
                 String entityId = key != null ? key.toString() : "";
-                if (entityId.equals(questTarget)) {
-                        questCurrentCount++;
-                        updateBossBar();
-                        LOGGER.debug("[SentientMCMod] KILL quest progress: {}/{} ({})", questCurrentCount,
-                                        questTargetCount, questTarget);
+                if (entityId.equals(pq.target)) {
+                        pq.currentCount++;
+                        updateBossBar(player, pq);
+                        LOGGER.debug("[SentientMCMod] KILL quest progress: {}/{} ({})", pq.currentCount,
+                                        pq.targetCount, pq.target);
                 }
         }
 
@@ -427,67 +445,55 @@ public class SentientMCMod {
                                                                                         try {
                                                                                                 switch (key) {
                                                                                                         case "apikey":
-                                                                                                                RT_API_KEY = value;
+                                                                                                                SentientMCConfig.API_KEY.set(value);
                                                                                                                 break;
                                                                                                         case "apiurl":
-                                                                                                                RT_API_URL = value;
+                                                                                                                SentientMCConfig.API_URL.set(value);
                                                                                                                 break;
                                                                                                         case "modelname":
-                                                                                                                RT_MODEL_NAME = value;
+                                                                                                                SentientMCConfig.MODEL_NAME.set(value);
                                                                                                                 break;
                                                                                                         case "systemprompt":
-                                                                                                                RT_SYSTEM_PROMPT = value;
+                                                                                                                SentientMCConfig.SYSTEM_PROMPT.set(value);
                                                                                                                 break;
                                                                                                         case "ainame":
-                                                                                                                RT_AI_NAME = value;
+                                                                                                                SentientMCConfig.AI_NAME.set(value);
                                                                                                                 break;
                                                                                                         case "memorysize":
-                                                                                                                RT_MEMORY_SIZE = Integer
-                                                                                                                                .parseInt(value);
+                                                                                                                SentientMCConfig.MEMORY_SIZE.set(Integer.parseInt(value));
                                                                                                                 break;
                                                                                                         case "batchdelay":
-                                                                                                                RT_BATCH_DELAY = Integer
-                                                                                                                                .parseInt(value);
+                                                                                                                SentientMCConfig.BATCH_DELAY.set(Integer.parseInt(value));
                                                                                                                 break;
                                                                                                         case "proactiveinterval":
-                                                                                                                RT_PROACTIVE_INTERVAL = Integer
-                                                                                                                                .parseInt(value);
+                                                                                                                SentientMCConfig.PROACTIVE_INTERVAL.set(Integer.parseInt(value));
                                                                                                                 break;
                                                                                                         case "maxcommandchain":
-                                                                                                                RT_MAX_COMMAND_CHAIN = Integer
-                                                                                                                                .parseInt(value);
+                                                                                                                SentientMCConfig.MAX_COMMAND_CHAIN.set(Integer.parseInt(value));
                                                                                                                 break;
                                                                                                         case "commands":
-                                                                                                                RT_ENABLE_COMMANDS = Boolean
-                                                                                                                                .parseBoolean(value);
+                                                                                                                SentientMCConfig.ENABLE_COMMANDS.set(Boolean.parseBoolean(value));
                                                                                                                 break;
                                                                                                         case "events":
-                                                                                                                RT_ENABLE_EVENTS = Boolean
-                                                                                                                                .parseBoolean(value);
+                                                                                                                SentientMCConfig.ENABLE_EVENTS.set(Boolean.parseBoolean(value));
                                                                                                                 break;
                                                                                                         case "stateinjection":
-                                                                                                                RT_ENABLE_STATE_INJECTION = Boolean
-                                                                                                                                .parseBoolean(value);
+                                                                                                                SentientMCConfig.ENABLE_STATE_INJECTION.set(Boolean.parseBoolean(value));
                                                                                                                 break;
                                                                                                         case "batching":
-                                                                                                                RT_ENABLE_BATCHING = Boolean
-                                                                                                                                .parseBoolean(value);
+                                                                                                                SentientMCConfig.ENABLE_BATCHING.set(Boolean.parseBoolean(value));
                                                                                                                 break;
                                                                                                         case "proactivechat":
-                                                                                                                RT_ENABLE_PROACTIVE_CHAT = Boolean
-                                                                                                                                .parseBoolean(value);
+                                                                                                                SentientMCConfig.ENABLE_PROACTIVE_CHAT.set(Boolean.parseBoolean(value));
                                                                                                                 break;
                                                                                                         case "entityscan":
-                                                                                                                RT_ENABLE_ENTITY_SCAN = Boolean
-                                                                                                                                .parseBoolean(value);
+                                                                                                                SentientMCConfig.ENABLE_ENTITY_SCAN.set(Boolean.parseBoolean(value));
                                                                                                                 break;
                                                                                                         case "inventoryscan":
-                                                                                                                RT_ENABLE_INVENTORY_SCAN = Boolean
-                                                                                                                                .parseBoolean(value);
+                                                                                                                SentientMCConfig.ENABLE_INVENTORY_SCAN.set(Boolean.parseBoolean(value));
                                                                                                                 break;
                                                                                                         case "debug":
-                                                                                                                RT_DEBUG_MODE = Boolean
-                                                                                                                                .parseBoolean(value);
+                                                                                                                SentientMCMod.RT_DEBUG_MODE = Boolean.parseBoolean(value); // Debug format isn't stored in Forge config currently.
                                                                                                                 break;
                                                                                                         default:
                                                                                                                 c.getSource().sendFailure(
@@ -497,6 +503,8 @@ public class SentientMCMod {
                                                                                                                                                                 + "'. Tab to see valid keys."));
                                                                                                                 return 0;
                                                                                                 }
+                                                                                                
+                                                                                                SentientMCMod.syncConfigWithRuntime();
                                                                                                 c.getSource().sendSuccess(
                                                                                                                 () -> Component.literal(
                                                                                                                                 "\u00a7a[SentientMCMod] "
@@ -535,8 +543,9 @@ public class SentientMCMod {
                         return;
                 if (event.getEntity() instanceof ServerPlayer) {
                         ServerPlayer player = (ServerPlayer) event.getEntity();
+                        String pName = player.getName().getString();
                         String deathMsg = event.getSource().getLocalizedDeathMessage(player).getString();
-                        handleEventMessage(player, "系统消息：玩家死亡 - " + deathMsg);
+                        handleEventMessage(player, "系统消息：玩家 " + pName + " 死亡 - " + deathMsg);
                 }
         }
 
@@ -546,10 +555,11 @@ public class SentientMCMod {
                         return;
                 if (event.getEntity() instanceof ServerPlayer) {
                         ServerPlayer player = (ServerPlayer) event.getEntity();
+                        String pName = player.getName().getString();
                         net.minecraft.advancements.DisplayInfo display = event.getAdvancement().getDisplay();
                         if (display != null && display.shouldAnnounceChat()) {
                                 String advName = display.getTitle().getString();
-                                handleEventMessage(player, "系统消息：玩家达成了成就 [" + advName + "]");
+                                handleEventMessage(player, "系统消息：玩家 " + pName + " 达成了成就 [" + advName + "]");
                         }
                 }
         }
@@ -576,6 +586,14 @@ public class SentientMCMod {
 
         private void handleEventMessage(ServerPlayer player, String eventMessage) {
                 String playerName = player.getName().getString();
+
+                // Permission Check: if whitelist has entries, player must be in it
+                if (!chatWhitelist.isEmpty() && !chatWhitelist.contains(playerName)) {
+                        return;
+                }
+
+                lastTriggerPlayer = playerName;
+
                 LOGGER.info("[SentientMCMod] Intercepted event for {}: {}", playerName, eventMessage);
 
                 String envState = getEnvironmentState(player);
@@ -583,7 +601,7 @@ public class SentientMCMod {
                 SentientMCClient.addMessageToBatch(playerName, eventMessage, envState);
         }
 
-        private String getEnvironmentState(ServerPlayer player) {
+        private static String getEnvironmentState(ServerPlayer player) {
                 BlockPos pos = player.blockPosition();
                 String time = player.level().isDay() ? "白天" : "夜晚";
                 String weather = player.level().isRaining() ? "下雨" : (player.level().isThundering() ? "雷雨" : "晴朗");
@@ -592,6 +610,11 @@ public class SentientMCMod {
                 StringBuilder stateBuilder = new StringBuilder();
                 stateBuilder.append(String.format("玩家位置: %d, %d, %d | 维度: %s | 时间: %s | 天气: %s",
                                 pos.getX(), pos.getY(), pos.getZ(), dimension, time, weather));
+                
+                MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+                if (server != null) {
+                        stateBuilder.append("\n[当前在线玩家]: ").append(String.join(", ", server.getPlayerList().getPlayerNamesArray()));
+                }
 
                 if (SentientMCConfig.ENABLE_BIOME_SENSE.get()) {
                         String biome = player.level().getBiome(pos).unwrapKey().map(k -> k.location().getPath())
@@ -599,9 +622,10 @@ public class SentientMCMod {
                         stateBuilder.append(" | 群系: ").append(biome);
                 }
 
-                if (!questType.isEmpty() && questTargetCount > 0) {
-                        stateBuilder.append("\n[当前活动任务]: {").append(questType).append("} ").append(questDesc)
-                                        .append(" (").append(questCurrentCount).append("/").append(questTargetCount)
+                PlayerQuest currentQuest = activeQuests.get(player.getName().getString());
+                if (currentQuest != null && currentQuest.targetCount > 0) {
+                        stateBuilder.append("\n[当前活动任务]: {").append(currentQuest.type).append("} ").append(currentQuest.desc)
+                                        .append(" (").append(currentQuest.currentCount).append("/").append(currentQuest.targetCount)
                                         .append(") (系统会在玩家完成时自动通知你，无需你判定)");
                 }
 
@@ -661,12 +685,7 @@ public class SentientMCMod {
 
                 LOGGER.info("[SentientMCMod] Broadcasting AI response: {}", aiResponse);
 
-                // Initialize BossBar if it doesn't exist
-                if (questBossBar == null) {
-                        questBossBar = new ServerBossEvent(Component.literal(""), BossEvent.BossBarColor.YELLOW,
-                                        BossEvent.BossBarOverlay.PROGRESS);
-                        questBossBar.setProgress(1.0f);
-                }
+                // Quest parsing is now individual per player, bossbars are generated dynamically.
 
                 // Parse potential commands
                 if (RT_ENABLE_COMMANDS) {
@@ -780,53 +799,98 @@ public class SentientMCMod {
                                                 SentientMCClient.addMessageToBatch("SYSTEM",
                                                                 "[COMMAND FEEDBACK]\n" + feedbackBuilder.toString(),
                                                                 null);
-                                                onCommandFeedback.run();
+                                                // 修正：AI 链式反馈（修正指令错误）必须异步执行，否则会阻塞服务器主线程
+                                                java.util.concurrent.CompletableFuture.runAsync(onCommandFeedback);
                                         }
                                 });
                         }
                 }
 
-                // Parse potential quests [QUEST: TYPE:TARGET:COUNT:DESCRIPTION]
-                // Example: [QUEST: ITEM_GATHER:minecraft:apple:5:收集5个苹果]
-                // [QUEST: KILL:minecraft:zombie:3:击杀3只僵尸]
-                Pattern questPattern = Pattern.compile("\\[QUEST: (.*?):(.*?):(\\d+):(.*?)\\]");
-                Matcher questMatcher = questPattern.matcher(aiResponse);
-                while (questMatcher.find()) {
-                        questType = questMatcher.group(1).trim();
-                        questTarget = questMatcher.group(2).trim();
-                        try {
-                                questTargetCount = Integer.parseInt(questMatcher.group(3).trim());
-                        } catch (Exception e) {
-                                questTargetCount = 1;
-                        }
-                        questDesc = questMatcher.group(4).trim();
-                        questCurrentCount = 0;
-
-                        LOGGER.info("[SentientMCMod] AI issued new structured quest: Type={}, Target={}, Count={}, Desc={}",
-                                        questType, questTarget, questTargetCount, questDesc);
+                // Parse private messages [PRIVATE: PlayerName: Message]
+                Pattern privatePattern = Pattern.compile("\\[PRIVATE:\\s*([a-zA-Z0-9_]+)\\s*:\\s*(.*?)\\]");
+                Matcher privateMatcher = privatePattern.matcher(aiResponse);
+                while (privateMatcher.find()) {
+                        String targetPlayer = privateMatcher.group(1).trim();
+                        String privateMsg = privateMatcher.group(2).trim();
+                        
+                        LOGGER.info("[SentientMCMod] AI issued private message to {}: {}", targetPlayer, privateMsg);
 
                         server.execute(() -> {
-                                questBossBar.setVisible(true);
-                                updateBossBar();
-                                for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-                                        questBossBar.addPlayer(p);
+                                ServerPlayer p = server.getPlayerList().getPlayerByName(targetPlayer);
+                                if (p != null) {
+                                        p.sendSystemMessage(Component.literal("§d[" + RT_AI_NAME + " -> 你] §f" + privateMsg));
+                                } else {
+                                        LOGGER.warn("[SentientMCMod] AI tried to whisper to offline or invalid player {}", targetPlayer);
                                 }
                         });
+                }
+                aiResponse = privateMatcher.replaceAll("").trim();
 
-                        server.getPlayerList().broadcastSystemMessage(
-                                        Component.literal("§e[新任务] §a" + questDesc + " §7(0/" + questTargetCount + ")"),
-                                        false);
+                // Parse potential quests [QUEST: PlayerName:TYPE:TARGET:COUNT:DESCRIPTION]
+                // Example: [QUEST: Notchy:ITEM_GATHER:minecraft:apple:5:收集5个苹果]
+                Pattern questPattern = Pattern.compile("\\[QUEST:\\s*([a-zA-Z0-9_]+)\\s*:(.*?):(.*?):(\\d+):(.*?)\\]");
+                Matcher questMatcher = questPattern.matcher(aiResponse);
+                while (questMatcher.find()) {
+                        String targetPlayerName = questMatcher.group(1).trim();
+                        String qType = questMatcher.group(2).trim();
+                        String qTarget = questMatcher.group(3).trim();
+                        int qCount;
+                        try {
+                                qCount = Integer.parseInt(questMatcher.group(4).trim());
+                        } catch (Exception e) {
+                                qCount = 1;
+                        }
+                        String qDesc = questMatcher.group(5).trim();
+
+                        LOGGER.info("[SentientMCMod] AI issued new structured quest to {}: Type={}, Target={}, Count={}, Desc={}",
+                                        targetPlayerName, qType, qTarget, qCount, qDesc);
+
+                        final int finalQCount = qCount;
+                        server.execute(() -> {
+                                ServerPlayer p = server.getPlayerList().getPlayerByName(targetPlayerName);
+                                if (p != null) {
+                                        // 清理旧任务的 BossBar
+                                        PlayerQuest oldQuest = activeQuests.get(targetPlayerName);
+                                        if (oldQuest != null) {
+                                                oldQuest.bossBar.setVisible(false);
+                                                oldQuest.bossBar.removePlayer(p);
+                                        }
+
+                                        PlayerQuest newQuest = new PlayerQuest(qType, qTarget, finalQCount, qDesc);
+                                        activeQuests.put(targetPlayerName, newQuest);
+                                        
+                                        newQuest.bossBar.setVisible(true);
+                                        newQuest.bossBar.addPlayer(p);
+                                        updateBossBar(p, newQuest);
+
+                                        p.sendSystemMessage(Component.literal("§e[新专属任务] §a" + qDesc + " §7(0/" + finalQCount + ")"));
+                                } else {
+                                        LOGGER.warn("[SentientMCMod] AI tried to issue quest to offline or invalid player {}", targetPlayerName);
+                                }
+                        });
                 }
                 aiResponse = questMatcher.replaceAll("").trim();
 
-                // Add newly joined players to the quest bar if there is an active quest
-                if (!questType.isEmpty() && questBossBar != null) {
+                // Parse player query [QUERY_PLAYER: PlayerName]
+                Pattern queryPattern = Pattern.compile("\\[QUERY_PLAYER:\\s*([a-zA-Z0-9_]+)\\s*\\]");
+                Matcher queryMatcher = queryPattern.matcher(aiResponse);
+                while (queryMatcher.find()) {
+                        String targetName = queryMatcher.group(1).trim();
+                        LOGGER.info("[SentientMCMod] AI queried player info for: {}", targetName);
                         server.execute(() -> {
-                                for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-                                        questBossBar.addPlayer(p);
+                                ServerPlayer targetP = server.getPlayerList().getPlayerByName(targetName);
+                                if (targetP != null) {
+                                        // Use getEnvironmentState for the target player
+                                        String targetState = getEnvironmentState(targetP);
+                                        SentientMCClient.addMessageToBatch(lastTriggerPlayer, 
+                                                "[SYSTEM FEEDBACK] 玩家 " + targetName + " 的当前状态如下:\n" + targetState, null);
+                                } else {
+                                        SentientMCClient.addMessageToBatch(lastTriggerPlayer,
+                                                "[SYSTEM FEEDBACK] 无法查询到玩家 " + targetName + "，可能已下线。", null);
                                 }
                         });
                 }
+                aiResponse = queryMatcher.replaceAll("").trim();
 
                 if (!aiResponse.isEmpty()) {
                         server.getPlayerList().broadcastSystemMessage(

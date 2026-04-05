@@ -302,22 +302,25 @@ public class SentientMCClient {
         if (SentientMCMod.RT_ENABLE_COMMANDS) {
             finalSysPrompt += "\n[COMMAND EXECUTION]: You can execute server commands by outputting exactly `[COMMAND: /your_command]`. You can output multiple commands. After they execute, the system will silently reply with the output. You should use this to fix your mistakes or give players items.";
         }
+        finalSysPrompt += "\n[PRIVATE REPLIES]: If a player talks to you using `[私聊]` or you need to reply privately so others don't see, output exactly `[PRIVATE: PlayerName: Your Message]`. You can mix this with regular chat. Only the target player will see this part.";
+        finalSysPrompt += "\n[PLAYER QUERY]: If you need to know another player's location, inventory, or state (e.g. if someone asks you about them), output exactly `[QUERY_PLAYER: PlayerName]`. You will receive their status (as if you were looking at them) in a follow-up system message.";
         // Always inject quest system instructions + valid target list so AI picks
         // correct IDs
-        finalSysPrompt += "\n[QUEST SYSTEM]: You can assign quests to players using ONLY the following exact format (do not deviate):\n"
-                + "  `[QUEST: TYPE:target_id:count:Description in Chinese]`\n"
+        finalSysPrompt += "\n[QUEST SYSTEM]: You can assign individual quests to players using ONLY the following exact format (do not deviate):\n"
+                + "  `[QUEST: PlayerName:TYPE:target_id:count:Description in Chinese]`\n"
                 + "Supported quest types:\n"
                 + "  ITEM_GATHER  — collect items into inventory.\n"
-                + "    Example: [QUEST: ITEM_GATHER:minecraft:apple:5:收集5个苹果]\n"
+                + "    Example: [QUEST: Notchy:ITEM_GATHER:minecraft:apple:5:收集5个苹果]\n"
                 + "  KILL         — kill specific mobs.\n"
-                + "    Example: [QUEST: KILL:minecraft:zombie:3:杀死3只僵尸]\n"
+                + "    Example: [QUEST: Player123:KILL:minecraft:zombie:3:杀死3只僵尸]\n"
                 + "  BUILD        — place specific blocks.\n"
-                + "    Example: [QUEST: BUILD:minecraft:stone_bricks:20:放置20个石砖]\n"
+                + "    Example: [QUEST: Steve:BUILD:minecraft:stone_bricks:20:放置20个石砖]\n"
                 + (questTargetsPrompt.isEmpty() ? "" : questTargetsPrompt + "\n")
                 + "Rules:\n"
+                + "- You MUST specify the exact target PlayerName for who the quest is assigned to.\n"
                 + "- You MUST only use target IDs from the list above. Do NOT invent IDs.\n"
                 + "- Always use full Minecraft namespace IDs (e.g. `minecraft:stone_bricks`).\n"
-                + "- Only one active quest at a time. When the system reports a quest completed, you may issue the next one.\n"
+                + "- Only one active quest per player at a time. When the system reports a player completed their quest, you may issue them the next one.\n"
                 + "- The quest tag can appear anywhere in your message. The rest of your message is shown to players normally.";
         systemMessage.addProperty("content", finalSysPrompt);
 
