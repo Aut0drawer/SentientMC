@@ -1,25 +1,32 @@
-# eclipse
-bin
-*.launch
-.settings
-.metadata
-.classpath
-.project
+# Gradle
+.gradle/
+build/
 
-# idea
-out
+# Forge / Minecraft Run
+run/
+run-data/
+logs/
+*.log
+
+# IDEs
+.idea/
+.vscode/
+*.iml
 *.ipr
 *.iws
-*.iml
-.idea
+.settings/
+.classpath
+.project
+bin/
+out/
 
-# gradle
-build
-.gradle
+# Forge MDK overhead
+forge-*-mdk.zip
+changelog.txt
+CREDITS.txt
+LICENSE.txt
+README.txt
 
-# other
-eclipse
-run
-
-# Files from Forge MDK
-forge*changelog.txt
+# OS
+.DS_Store
+Thumbs.db
