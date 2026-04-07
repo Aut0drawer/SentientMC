@@ -2,6 +2,11 @@
 
 SentientMC is a Minecraft Forge mod that integrates Large Language Models (LLMs) into the game, providing a context-aware AI assistant that can interact with players, perceive the game world, and execute commands.
 
+## 📥 Download
+
+[![Download from CurseForge](https://img.shields.io/badge/Download-CurseForge-orange?style=for-the-badge&logo=curseforge)](https://www.curseforge.com/minecraft/mc-mods/sentientmc)
+
+
 [中文说明 (Chinese Description)](SENTIENTMC_DESCRIPTION.md)
 
 ## Features
