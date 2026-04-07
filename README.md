@@ -21,7 +21,7 @@ SentientMC is a Minecraft Forge mod that integrates Large Language Models (LLMs)
 ## Installation
 
 ### For Players
-1. Download the latest `.jar` from the [Releases](https://github.com/Aut0Drawer/SentientMC/releases) page.
+1. Download the latest `.jar` from the [CurseForge](https://www.curseforge.com/minecraft/mc-mods/sentientmc).
 2. Place the jar in your Minecraft `mods` folder.
 3. Ensure you are running the correct version of **Minecraft Forge** (1.21.1).
 
