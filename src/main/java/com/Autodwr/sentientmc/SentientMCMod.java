@@ -9,7 +9,7 @@ import net.minecraftforge.fml.common.Mod;
 
 import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
-import net.minecraftforge.fml.ModLoadingContext;
+import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.loading.FMLLoader;
 
@@ -110,13 +110,12 @@ public class SentientMCMod {
         // check)
         public static String lastTriggerPlayer = "";
 
-        @SuppressWarnings("removal")
-        public SentientMCMod() {
+        public SentientMCMod(FMLJavaModLoadingContext context) {
                 MinecraftForge.EVENT_BUS.register(this);
                 LOGGER.info("[SentientMCMod] Successfully registered on MinecraftForge.EVENT_BUS!");
 
                 // COMMON 类型在单人和服务端均可正常读取和保存
-                ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, SentientMCConfig.SPEC);
+                context.registerConfig(ModConfig.Type.COMMON, SentientMCConfig.SPEC);
 
                 if (FMLLoader.getDist().isClient()) {
                         SentientMCConfigScreen.registerConfigScreen();
@@ -162,7 +161,6 @@ public class SentientMCMod {
                 }
         }
 
-        @SuppressWarnings("removal")
         private static net.minecraft.resources.ResourceLocation parseResourceLocation(String id) {
                 String[] parts = id.split(":", 2);
                 if (parts.length == 2) {
