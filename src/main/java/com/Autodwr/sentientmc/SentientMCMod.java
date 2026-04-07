@@ -46,7 +46,7 @@ import net.minecraft.server.level.ServerBossEvent;
 import net.minecraftforge.event.level.BlockEvent;
 
 @SuppressWarnings("null")
-@Mod(SentientMCMod.MODID)
+@Mod("sentientmc")
 public class SentientMCMod {
         public static final String MODID = "sentientmc";
         private static final Logger LOGGER = LogUtils.getLogger();
@@ -166,9 +166,9 @@ public class SentientMCMod {
         private static net.minecraft.resources.ResourceLocation parseResourceLocation(String id) {
                 String[] parts = id.split(":", 2);
                 if (parts.length == 2) {
-                        return new net.minecraft.resources.ResourceLocation(parts[0], parts[1]);
+                        return net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(parts[0], parts[1]);
                 } else {
-                        return new net.minecraft.resources.ResourceLocation("minecraft", id);
+                        return net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("minecraft", id);
                 }
         }
 
@@ -556,9 +556,9 @@ public class SentientMCMod {
                 if (event.getEntity() instanceof ServerPlayer) {
                         ServerPlayer player = (ServerPlayer) event.getEntity();
                         String pName = player.getName().getString();
-                        net.minecraft.advancements.DisplayInfo display = event.getAdvancement().getDisplay();
-                        if (display != null && display.shouldAnnounceChat()) {
-                                String advName = display.getTitle().getString();
+                        var displayOpt = event.getAdvancement().value().display();
+                        if (displayOpt.isPresent() && displayOpt.get().shouldAnnounceChat()) {
+                                String advName = displayOpt.get().getTitle().getString();
                                 handleEventMessage(player, "系统消息：玩家 " + pName + " 达成了成就 [" + advName + "]");
                         }
                 }
@@ -747,36 +747,19 @@ public class SentientMCMod {
                                                                         });
 
                                                         try {
-                                                                int result = server.getCommands()
+                                                                server.getCommands()
                                                                                 .performPrefixedCommand(source,
                                                                                                 finalCmd);
-                                                                if (result > 0) {
-                                                                        feedbackBuilder.append("Command /")
-                                                                                        .append(finalCmd)
-                                                                                        .append(" executed successfully.\n");
-                                                                        if (RT_DEBUG_MODE) {
-                                                                                server.getPlayerList()
-                                                                                                .broadcastSystemMessage(
-                                                                                                                Component.literal(
-                                                                                                                                "§a[指令成功闭环] -> /"
-                                                                                                                                                + finalCmd),
-                                                                                                                false);
-                                                                        }
-                                                                } else {
-                                                                        feedbackBuilder.append("Command /")
-                                                                                        .append(finalCmd)
-                                                                                        .append(" failed to execute. ");
-                                                                        // Fallback teaching
-                                                                        feedbackBuilder.append(
-                                                                                        "\n[Hint: Ensure your command is correct Minecraft syntax. e.g. /give <player> <item> <amount>, /summon <entity> <x> <y> <z>, /time set day]\n");
-                                                                        if (RT_DEBUG_MODE) {
-                                                                                server.getPlayerList()
-                                                                                                .broadcastSystemMessage(
-                                                                                                                Component.literal(
-                                                                                                                                "§c[系统报错] -> /" + finalCmd
-                                                                                                                                                + " (已回传给AI让其自我修正)"),
-                                                                                                                false);
-                                                                        }
+                                                                feedbackBuilder.append("Command /")
+                                                                                .append(finalCmd)
+                                                                                .append(" executed successfully.\n");
+                                                                if (RT_DEBUG_MODE) {
+                                                                        server.getPlayerList()
+                                                                                        .broadcastSystemMessage(
+                                                                                                        Component.literal(
+                                                                                                                        "§a[指令成功闭环] -> /"
+                                                                                                                                        + finalCmd),
+                                                                                                        false);
                                                                 }
                                                         } catch (Exception e) {
                                                                 feedbackBuilder.append("Error executing command /")

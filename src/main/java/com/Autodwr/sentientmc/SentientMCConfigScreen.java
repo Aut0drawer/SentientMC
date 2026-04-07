@@ -213,8 +213,17 @@ public class SentientMCConfigScreen extends Screen {
     }
 
     @Override
+    public void renderBackground(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+        // Override to prevent the default blur shader from being applied
+        guiGraphics.fillGradient(0, 0, this.width, this.height, 0xC0101010, 0xD0101010);
+    }
+
+    @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        this.renderBackground(guiGraphics);
+        // super.render calls renderBackground (our override above, no blur) then renders widgets
+        super.render(guiGraphics, mouseX, mouseY, partialTick);
+
+        // Draw text AFTER super.render so it's not affected by any post-processing
         guiGraphics.drawCenteredString(this.font, Component.translatable("sentientmc.config.title_page", this.title, currentPage), this.width / 2, 10, 16777215);
         
         if (currentPage == 1) {
@@ -227,7 +236,5 @@ public class SentientMCConfigScreen extends Screen {
             guiGraphics.drawString(this.font, Component.translatable("sentientmc.config.labels2a"), this.width / 2 - 150, 30, 10526880);
             guiGraphics.drawString(this.font, Component.translatable("sentientmc.config.labels2b"), this.width / 2 - 100, 61, 10526880);
         }
-
-        super.render(guiGraphics, mouseX, mouseY, partialTick);
     }
 }

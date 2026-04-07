@@ -247,6 +247,9 @@ public class SentientMCClient {
                     flushQueueSync(commandDepth + 1);
                 }
             });
+        } else if (response != null && response.startsWith("API Error")) {
+            // Broadcast error to all players so they can troubleshoot
+            broadcastError(response);
         }
     }
 
@@ -275,6 +278,17 @@ public class SentientMCClient {
             flushQueueInternal(combinedMessages.toString().trim(), lastEnvState, newDepth);
         } catch (Exception e) {
             LOGGER.error("[SentientMCClient] Error processing feedback batch request", e);
+        }
+    }
+
+    private static void broadcastError(String errorMessage) {
+        net.minecraft.server.MinecraftServer server = net.minecraftforge.server.ServerLifecycleHooks.getCurrentServer();
+        if (server != null) {
+            server.execute(() -> {
+                net.minecraft.network.chat.Component msg = net.minecraft.network.chat.Component.literal(
+                        "§c[SentientMC] " + errorMessage);
+                server.getPlayerList().broadcastSystemMessage(msg, false);
+            });
         }
     }
 
@@ -360,8 +374,27 @@ public class SentientMCClient {
         LOGGER.info("[SentientMCClient] Received response. Status: {}", response.statusCode());
 
         if (response.statusCode() >= 400) {
-            LOGGER.error("[SentientMCClient] API request failed with status {}", response.statusCode());
-            return "API Error: " + response.statusCode();
+            String errorBody = response.body();
+            String errorDetail = "";
+            try {
+                JsonObject errJson = GSON.fromJson(errorBody, JsonObject.class);
+                if (errJson != null && errJson.has("error")) {
+                    JsonObject errObj = errJson.getAsJsonObject("error");
+                    if (errObj.has("message")) {
+                        errorDetail = errObj.get("message").getAsString();
+                    } else {
+                        errorDetail = errObj.toString();
+                    }
+                } else if (errJson != null && errJson.has("message")) {
+                    errorDetail = errJson.get("message").getAsString();
+                } else {
+                    errorDetail = errorBody.length() > 200 ? errorBody.substring(0, 200) + "..." : errorBody;
+                }
+            } catch (Exception e) {
+                errorDetail = errorBody.length() > 200 ? errorBody.substring(0, 200) + "..." : errorBody;
+            }
+            LOGGER.error("[SentientMCClient] API request failed with status {}. Detail: {}", response.statusCode(), errorDetail);
+            return "API Error: HTTP " + response.statusCode() + " - " + errorDetail;
         }
 
         JsonObject json = GSON.fromJson(response.body(), JsonObject.class);
