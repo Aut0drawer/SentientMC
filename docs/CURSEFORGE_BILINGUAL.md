@@ -52,4 +52,4 @@ Configure via `config/sentientmc-common.toml` or the in-game Mod Menu.
 - `/aiconfig clearmemory`: Clear AI conversation history. / 清除 AI 对话记忆。
 
 ---
-© 2026 Aut0Drawer. Created with ❤️ for the Minecraft community.
+© 2026 Aut0Drawer.
